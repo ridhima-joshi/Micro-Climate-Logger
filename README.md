@@ -268,6 +268,7 @@ http://localhost:8080
 # 👩‍💻 Authors
 
 Ridhima Joshi
+
 Medhini
 
 Embedded Systems Project — Micro-Climate Gradient Monitoring
