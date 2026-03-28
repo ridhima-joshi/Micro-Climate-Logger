@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Micro-Climate Logger</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0c10;
+    --surface:   #111318;
+    --border:    #1e2230;
+    --n1:        #00d4ff;
+    --n2:        #ff6b35;
+    --ok:        #00e676;
+    --warn:      #ffab00;
+    --danger:    #ff1744;
+    --text:      #e8eaf0;
+    --muted:     #5a6070;
+    --font-head: 'Syne', sans-serif;
+    --font-mono: 'Space Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── scanline overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* ── header ── */
+  header {
+    padding: 28px 40px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .logo-block h1 {
+    font-family: var(--font-head);
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(90deg, var(--n1), var(--n2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .logo-block p {
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .hw-badge {
+    font-size: 0.65rem;
+    font-family: var(--font-mono);
+    letter-spacing: 1px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    border: 1px solid;
+    text-transform: uppercase;
+  }
+  .hw-badge.live   { color: var(--ok);   border-color: var(--ok);   background: rgba(0,230,118,0.08); }
+  .hw-badge.demo   { color: var(--warn); border-color: var(--warn); background: rgba(255,171,0,0.08); }
+
+  .clock {
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  /* ── scenario tabs ── */
+  .tabs {
+    padding: 16px 40px;
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    padding: 6px 16px;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tab:hover, .tab.active {
+    border-color: var(--n1);
+    color: var(--n1);
+    background: rgba(0,212,255,0.06);
+  }
+
+  /* ── main layout ── */
+  main {
+    padding: 32px 40px;
+    display: grid;
+    gap: 24px;
+  }
+
+  /* ── AC Advice banner ── */
+  #advice-banner {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--ok);
+    border-radius: 4px;
+    padding: 18px 24px;
+  }
+
+  #advice-banner h2 {
+    font-family: var(--font-head);
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  #advice-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .advice-line {
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: var(--text);
+  }
+
+  /* ── live node cards ── */
+  .node-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  @media (max-width: 700px) {
+    .node-grid { grid-template-columns: 1fr; }
+    main { padding: 20px; }
+    header { padding: 20px; }
+    .tabs { padding: 12px 20px; }
+  }
+
+  .node-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 22px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .node-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .node-card.n1::before { background: var(--n1); }
+  .node-card.n2::before { background: var(--n2); }
+
+  .node-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+  }
+
+  .node-name {
+    font-family: var(--font-head);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .node-card.n1 .node-name { color: var(--n1); }
+  .node-card.n2 .node-name { color: var(--n2); }
+
+  .comfort-badge {
+    font-size: 0.6rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 2px;
+    font-weight: 700;
+  }
+  .comfort-badge.comfort   { background: rgba(0,230,118,0.15);  color: var(--ok);    border: 1px solid rgba(0,230,118,0.3); }
+  .comfort-badge.too_hot   { background: rgba(255,23,68,0.15);  color: var(--danger);border: 1px solid rgba(255,23,68,0.3); }
+  .comfort-badge.too_cold  { background: rgba(0,212,255,0.12);  color: var(--n1);    border: 1px solid rgba(0,212,255,0.3); }
+  .comfort-badge.too_humid { background: rgba(255,171,0,0.12);  color: var(--warn);  border: 1px solid rgba(255,171,0,0.3); }
+  .comfort-badge.too_dry   { background: rgba(255,107,53,0.12); color: var(--n2);    border: 1px solid rgba(255,107,53,0.3); }
+
+  .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+  }
+
+  .metric-box { text-align: center; }
+
+  .metric-val {
+    font-family: var(--font-head);
+    font-size: 1.9rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 4px;
+    transition: color 0.4s;
+  }
+  .node-card.n1 .metric-val { color: var(--n1); }
+  .node-card.n2 .metric-val { color: var(--n2); }
+
+  .metric-unit {
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* ── gradient strip ── */
+  .grad-strip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 24px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    text-align: center;
+  }
+
+  .grad-item {}
+  .grad-val {
+    font-family: var(--font-head);
+    font-size: 1.4rem;
+    font-weight: 800;
+  }
+  .grad-label {
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* ── charts section ── */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  @media (max-width: 900px) {
+    .charts-grid { grid-template-columns: 1fr; }
+  }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+  }
+
+  .chart-title {
+    font-family: var(--font-head);
+    font-size: 0.65rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  .chart-wrap {
+    position: relative;
+    height: 200px;
+  }
+
+  /* ── summary bar ── */
+  .summary-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 24px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    text-align: center;
+  }
+
+  @media (max-width: 600px) {
+    .summary-bar { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .stat-num {
+    font-family: var(--font-head);
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--n1);
+  }
+
+  .stat-label {
+    font-size: 0.58rem;
+    color: var(--muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+
+  /* ── anomaly log ── */
+  .anomaly-log {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px 24px;
+  }
+
+  .anomaly-log h2 {
+    font-family: var(--font-head);
+    font-size: 0.65rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  #anomaly-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+
+  .anomaly-item {
+    font-size: 0.72rem;
+    color: var(--danger);
+    padding: 5px 10px;
+    background: rgba(255,23,68,0.06);
+    border-left: 2px solid var(--danger);
+    border-radius: 2px;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .no-anomaly {
+    font-size: 0.72rem;
+    color: var(--ok);
+    padding: 5px 10px;
+    background: rgba(0,230,118,0.05);
+    border-left: 2px solid var(--ok);
+    border-radius: 2px;
+  }
+
+  /* ── footer ── */
+  footer {
+    padding: 20px 40px;
+    border-top: 1px solid var(--border);
+    font-size: 0.62rem;
+    color: var(--muted);
+    letter-spacing: 1px;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* ── loading state ── */
+  .loading-overlay {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+    flex-direction: column;
+    gap: 16px;
+    transition: opacity 0.5s;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .spinner {
+    width: 40px; height: 40px;
+    border: 2px solid var(--border);
+    border-top-color: var(--n1);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  /* ── strat warning flash ── */
+  @keyframes flash-border {
+    0%, 100% { border-color: var(--border); }
+    50%       { border-color: var(--warn); }
+  }
+
+  .strat-active {
+    animation: flash-border 1.5s ease-in-out infinite;
+  }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loader">
+  <div class="spinner"></div>
+  <div class="loading-text">Connecting to nodes...</div>
+</div>
+
+<!-- ── Header ──────────────────────────────────────────── -->
+<header>
+  <div class="logo-block">
+    <h1>Micro-Climate Logger</h1>
+    <p>Dual-node classroom environment monitor</p>
+  </div>
+  <div class="header-right">
+    <span class="hw-badge demo" id="source-badge">⬤ DEMO MODE</span>
+    <span class="clock" id="clock">--:--:--</span>
+  </div>
+</header>
+
+<!-- ── Scenario Tabs ────────────────────────────────────── -->
+<div class="tabs">
+  <button class="tab active" data-scenario="classroom">Classroom</button>
+  <button class="tab" data-scenario="lab">Laboratory</button>
+  <button class="tab" data-scenario="cold_storage">Cold Storage</button>
+</div>
+
+<!-- ── Main ─────────────────────────────────────────────── -->
+<main>
+
+  <!-- AC Advice -->
+  <div id="advice-banner">
+    <h2>🌡️ AC Recommendation</h2>
+    <div id="advice-lines">
+      <div class="advice-line muted">Loading recommendations…</div>
+    </div>
+  </div>
+
+  <!-- Live Node Cards -->
+  <div class="node-grid">
+    <div class="node-card n1" id="card-n1">
+      <div class="node-label">
+        <span class="node-name">Node 1 · Front-Left</span>
+        <span class="comfort-badge comfort" id="badge-n1">Comfort</span>
+      </div>
+      <div class="metrics">
+        <div class="metric-box">
+          <div class="metric-val" id="n1-temp">--.-</div>
+          <div class="metric-unit">°C Temp</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val" id="n1-hum">--.-</div>
+          <div class="metric-unit">% Humid</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val" id="n1-ldr">---</div>
+          <div class="metric-unit">LDR Raw</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="node-card n2" id="card-n2">
+      <div class="node-label">
+        <span class="node-name">Node 2 · Back-Right</span>
+        <span class="comfort-badge comfort" id="badge-n2">Comfort</span>
+      </div>
+      <div class="metrics">
+        <div class="metric-box">
+          <div class="metric-val" id="n2-temp">--.-</div>
+          <div class="metric-unit">°C Temp</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val" id="n2-hum">--.-</div>
+          <div class="metric-unit">% Humid</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val" id="n2-ldr">---</div>
+          <div class="metric-unit">LDR Raw</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gradient Strip -->
+  <div class="grad-strip" id="grad-strip">
+    <div class="grad-item">
+      <div class="grad-val" id="grad-temp">--.-°</div>
+      <div class="grad-label">Temp Gradient (N1−N2)</div>
+    </div>
+    <div class="grad-item">
+      <div class="grad-val" id="grad-hum">--.-</div>
+      <div class="grad-label">Humidity Gradient %</div>
+    </div>
+    <div class="grad-item">
+      <div class="grad-val" id="strat-status">—</div>
+      <div class="grad-label">Stratification</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <div class="chart-title">Temperature History — Both Nodes</div>
+      <div class="chart-wrap">
+        <canvas id="chart-temp"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Humidity History — Both Nodes</div>
+      <div class="chart-wrap">
+        <canvas id="chart-hum"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Temperature Gradient (N1 − N2)</div>
+      <div class="chart-wrap">
+        <canvas id="chart-grad"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Light Level (LDR) — Both Nodes</div>
+      <div class="chart-wrap">
+        <canvas id="chart-ldr"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Stats -->
+  <div class="summary-bar" id="summary-bar">
+    <div>
+      <div class="stat-num" id="s-anomalies">—</div>
+      <div class="stat-label">Anomalies Detected</div>
+    </div>
+    <div>
+      <div class="stat-num" id="s-strat">—</div>
+      <div class="stat-label">Stratification Events</div>
+    </div>
+    <div>
+      <div class="stat-num" id="s-n1pct">—</div>
+      <div class="stat-label">Node 1 Comfort %</div>
+    </div>
+    <div>
+      <div class="stat-num" id="s-n2pct">—</div>
+      <div class="stat-label">Node 2 Comfort %</div>
+    </div>
+  </div>
+
+  <!-- Anomaly Log -->
+  <div class="anomaly-log">
+    <h2>⚡ Anomaly Log</h2>
+    <div id="anomaly-list">
+      <div class="no-anomaly">No anomalies detected yet</div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <span>MICRO-CLIMATE LOGGER v1.0 · ESP8266 + DHT22 + LDR</span>
+  <span id="last-fetch">Last fetch: —</span>
+</footer>
+
+<script>
+// ─── Config ─────────────────────────────────────────────────────────────────
+const API = "http://localhost:5000";
+let currentScenario = "classroom";
+let charts = {};
+let anomalyLog = [];
+
+// ─── Clock ──────────────────────────────────────────────────────────────────
+function updateClock() {
+  document.getElementById("clock").textContent =
+    new Date().toLocaleTimeString("en-IN", { hour12: false });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── Chart Factory ──────────────────────────────────────────────────────────
+const gridColor = "rgba(255,255,255,0.04)";
+const tickColor  = "#5a6070";
+
+function makeLineChart(id, datasets, yLabel = "") {
+  const ctx = document.getElementById(id).getContext("2d");
+  return new Chart(ctx, {
+    type: "line",
+    data: { labels: [], datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: tickColor, font: { family: "Space Mono", size: 10 }, boxWidth: 10 }
+        },
+        tooltip: {
+          backgroundColor: "#111318",
+          borderColor: "#1e2230",
+          borderWidth: 1,
+          titleColor: "#e8eaf0",
+          bodyColor: "#e8eaf0",
+          titleFont: { family: "Syne", size: 11 },
+          bodyFont:  { family: "Space Mono", size: 10 },
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: tickColor, maxTicksLimit: 8, font: { family: "Space Mono", size: 9 } },
+          grid:  { color: gridColor }
+        },
+        y: {
+          title: { display: !!yLabel, text: yLabel, color: tickColor, font: { family: "Space Mono", size: 9 } },
+          ticks: { color: tickColor, font: { family: "Space Mono", size: 9 } },
+          grid:  { color: gridColor }
+        }
+      }
+    }
+  });
+}
+
+function initCharts() {
+  charts.temp = makeLineChart("chart-temp", [
+    { label: "Node 1 Front-Left", data: [], borderColor: "#00d4ff", backgroundColor: "rgba(0,212,255,0.05)", borderWidth: 2, pointRadius: 0, tension: 0.4 },
+    { label: "Node 2 Back-Right", data: [], borderColor: "#ff6b35", backgroundColor: "rgba(255,107,53,0.05)", borderWidth: 2, pointRadius: 0, tension: 0.4 },
+  ], "°C");
+
+  charts.hum = makeLineChart("chart-hum", [
+    { label: "Node 1 Front-Left", data: [], borderColor: "#00d4ff", backgroundColor: "rgba(0,212,255,0.05)", borderWidth: 2, pointRadius: 0, tension: 0.4 },
+    { label: "Node 2 Back-Right", data: [], borderColor: "#ff6b35", backgroundColor: "rgba(255,107,53,0.05)", borderWidth: 2, pointRadius: 0, tension: 0.4 },
+  ], "%");
+
+  charts.grad = makeLineChart("chart-grad", [
+    { label: "Temp Gradient (N1−N2)", data: [], borderColor: "#00e676", backgroundColor: "rgba(0,230,118,0.05)", borderWidth: 2, pointRadius: 0, tension: 0.4 },
+  ], "°C Diff");
+
+  charts.ldr = makeLineChart("chart-ldr", [
+    { label: "Node 1 Front-Left", data: [], borderColor: "#00d4ff", backgroundColor: "rgba(0,212,255,0.05)", borderWidth: 2, pointRadius: 0, tension: 0.4 },
+    { label: "Node 2 Back-Right", data: [], borderColor: "#ff6b35", backgroundColor: "rgba(255,107,53,0.05)", borderWidth: 2, pointRadius: 0, tension: 0.4 },
+  ], "Raw ADC");
+}
+
+function updateCharts(readings) {
+  const last = readings.slice(-40);
+  const labels = last.map(r => {
+    const d = new Date(r.timestamp);
+    return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  });
+
+  [charts.temp, charts.hum, charts.grad, charts.ldr].forEach(c => {
+    c.data.labels = labels;
+  });
+
+  charts.temp.data.datasets[0].data = last.map(r => r.node1_temp);
+  charts.temp.data.datasets[1].data = last.map(r => r.node2_temp);
+
+  charts.hum.data.datasets[0].data = last.map(r => r.node1_hum);
+  charts.hum.data.datasets[1].data = last.map(r => r.node2_hum);
+
+  charts.grad.data.datasets[0].data = last.map(r => r.grad_temp);
+
+  charts.ldr.data.datasets[0].data = last.map(r => r.node1_ldr);
+  charts.ldr.data.datasets[1].data = last.map(r => r.node2_ldr);
+
+  [charts.temp, charts.hum, charts.grad, charts.ldr].forEach(c => c.update());
+}
+
+// ─── Comfort badge text/class ────────────────────────────────────────────────
+const COMFORT_LABELS = {
+  comfort:   "✅ Comfortable",
+  too_hot:   "🔴 Too Hot",
+  too_cold:  "🔵 Too Cold",
+  too_humid: "💧 Too Humid",
+  too_dry:   "🌵 Too Dry",
+};
+
+function setComfortBadge(id, status) {
+  const el = document.getElementById(id);
+  el.className = `comfort-badge ${status}`;
+  el.textContent = COMFORT_LABELS[status] || status;
+}
+
+// ─── Fetch & Render ──────────────────────────────────────────────────────────
+async function fetchAndRender() {
+  try {
+    const res  = await fetch(`${API}/api/data/${currentScenario}`);
+    const data = await res.json();
+    const { summary, readings } = data;
+
+    // Source badge
+    const isLive = (summary.data_source || "").includes("Live");
+    const badge  = document.getElementById("source-badge");
+    badge.textContent = isLive ? "⬤ LIVE HARDWARE" : "⬤ DEMO MODE";
+    badge.className   = `hw-badge ${isLive ? "live" : "demo"}`;
+
+    // Latest live values
+    document.getElementById("n1-temp").textContent = summary.latest_n1_temp?.toFixed(1) ?? "--";
+    document.getElementById("n1-hum").textContent  = summary.latest_n1_hum?.toFixed(1)  ?? "--";
+    document.getElementById("n2-temp").textContent = summary.latest_n2_temp?.toFixed(1) ?? "--";
+    document.getElementById("n2-hum").textContent  = summary.latest_n2_hum?.toFixed(1)  ?? "--";
+
+    // LDR from last reading
+    const lastR = readings[readings.length - 1];
+    if (lastR) {
+      document.getElementById("n1-ldr").textContent = lastR.node1_ldr ?? "--";
+      document.getElementById("n2-ldr").textContent = lastR.node2_ldr ?? "--";
+    }
+
+    setComfortBadge("badge-n1", summary.latest_n1_comfort);
+    setComfortBadge("badge-n2", summary.latest_n2_comfort);
+
+    // Gradient strip
+    const gVal  = summary.avg_grad_temp;
+    const gHVal = summary.avg_grad_hum;
+    document.getElementById("grad-temp").textContent = (gVal >= 0 ? "+" : "") + gVal?.toFixed(1) + "°";
+    document.getElementById("grad-hum").textContent  = (gHVal >= 0 ? "+" : "") + gHVal?.toFixed(1) + "%";
+
+    const stratEl  = document.getElementById("strat-status");
+    const stripEl  = document.getElementById("grad-strip");
+    const hasStrat = summary.stratification_events > 0;
+    stratEl.textContent = hasStrat ? "⚠️ ACTIVE" : "✅ None";
+    stratEl.style.color = hasStrat ? "var(--warn)" : "var(--ok)";
+    stripEl.classList.toggle("strat-active", hasStrat);
+
+    // Summary bar
+    document.getElementById("s-anomalies").textContent = summary.anomalies_detected ?? "—";
+    document.getElementById("s-strat").textContent     = summary.stratification_events ?? "—";
+    document.getElementById("s-n1pct").textContent     = (summary.n1_comfort_pct ?? "—") + "%";
+    document.getElementById("s-n2pct").textContent     = (summary.n2_comfort_pct ?? "—") + "%";
+
+    // AC Advice
+    const adviceDiv = document.getElementById("advice-lines");
+    adviceDiv.innerHTML = "";
+    if (summary.ac_advice && summary.ac_advice.length > 0) {
+      summary.ac_advice.forEach(line => {
+        const d = document.createElement("div");
+        d.className = "advice-line";
+        d.textContent = line;
+        adviceDiv.appendChild(d);
+      });
+    }
+
+    // Anomaly log
+    const newAnomalies = readings.filter(r => r.if_anomaly);
+    if (newAnomalies.length > 0) {
+      const listEl = document.getElementById("anomaly-list");
+      listEl.innerHTML = "";
+      newAnomalies.slice(-8).reverse().forEach(r => {
+        const d = document.createElement("div");
+        d.className = "anomaly-item";
+        const ts = new Date(r.timestamp).toLocaleTimeString("en-IN", { hour12: false });
+        d.innerHTML = `
+          <span>${ts} — T1: ${r.node1_temp}°C  T2: ${r.node2_temp}°C</span>
+          <span>score: ${r.if_score?.toFixed(3)}</span>
+        `;
+        listEl.appendChild(d);
+      });
+    }
+
+    updateCharts(readings);
+
+    document.getElementById("last-fetch").textContent =
+      "Last fetch: " + new Date().toLocaleTimeString("en-IN", { hour12: false });
+
+    // Hide loader after first successful fetch
+    document.getElementById("loader").classList.add("hidden");
+
+  } catch (err) {
+    console.error("Fetch error:", err);
+    document.querySelector(".loading-text").textContent = "Cannot reach Flask server — is app.py running?";
+  }
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    btn.classList.add("active");
+    currentScenario = btn.dataset.scenario;
+    fetchAndRender();
+  });
+});
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+initCharts();
+fetchAndRender();
+setInterval(fetchAndRender, 5000);   // Refresh every 5 seconds
+</script>
+</body>
+</html>
